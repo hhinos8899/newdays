@@ -4,14 +4,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AI 预测系统</title>
-  <link rel="stylesheet" href="./styles.css?v=1" />
+  <link rel="stylesheet" href="./styles.css?v=3" />
 </head>
 <body>
   <div class="wrap">
     <header class="top">
       <div class="brand">AI</div>
-      <div class="title">预测系统（静态版）</div>
-      <button class="inst-btn" onclick="toggleInstructions()">使用说明</button>
+      <div class="title">预测系统</div>
     </header>
 
     <main class="card">
@@ -37,16 +36,6 @@
     </main>
   </div>
 
-  <div id="instModal" class="modal hidden" onclick="closeInstructions()">
-    <div class="modal-box" onclick="event.stopPropagation()">
-      <div class="modal-head">
-        <div class="modal-title">使用说明</div>
-        <button class="modal-close" onclick="closeInstructions()">×</button>
-      </div>
-      <pre id="instText" class="modal-text"></pre>
-    </div>
-  </div>
-
-  <script src="./app.js?v=1"></script>
+  <script src="./app.js?v=3"></script>
 </body>
 </html>
