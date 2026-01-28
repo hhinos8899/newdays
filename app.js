@@ -1,62 +1,35 @@
 /**
- * DEBUG版 app.js
- *
- * 规则（按你最新要求）：
- * A) 套入12手（4组三连顺序匹配，允许跳过，不要求连续）
- *    组顺序：PBP, BBP, PPB, PBP   （完成=虚拟12）
- *
- * B) 套完12手后：
- *    虚拟13/14/15 = BBP（接着前面组往下走，不从头开始）
- *    必须连续走满3手后再判定：三手里至少命中1手 -> 进入预测；否则继续下一轮(仍当作13/14/15)
- *
- * C) 过门槛后才开始逐手预测：
- *    因为13-15已经走完BBP，所以虚拟16从 PPB 开始
- *    循环组：BBP -> PPB -> PBP -> BBP -> PPB -> PBP -> PBB -> PBP -> ...
- *
- * D) DEBUG显示：真实第几手（虚拟第几手）、当前组/进度、门槛命中、下一手预测
+ * 调试版 app.js（最终标准顺序版）
+ * 标准8组：PBP, BBP, PPB, PBP, BBP, PPB, PBP, PBB
+ * 套入：前4组（共12手）——顺序匹配可跳过
+ * 门槛：虚拟13/14/15 = 第5组 BBP（必须连续走满3手再判定，三手至少中1手才进入预测）
+ * 预测：虚拟16从第6组 PPB 开始接着走（所以22-24必然是PBB）
  */
 
-const GROUPS = ["PBP", "BBP", "PPB", "PBP"]; // 套入12
-const GATE_GROUP = "BBP";                    // 13-15
-const LOOP_GROUPS = ["BBP","PPB","PBP","BBP","PPB","PBP","PBB","PBP"]; // 循环结构
+const GROUPS = ["PBP","BBP","PPB","PBP"]; // 套入前4组=12手（顺序匹配可跳过）
+const MASTER_GROUPS = ["PBP","BBP","PPB","PBP","BBP","PPB","PBP","PBB"]; // ✅ 你给的唯一标准顺序
+const GATE_GROUP = "BBP"; // ✅ 虚拟13/14/15
 
 let gameHistory = [];
-let waiting = false;
+let phase = 0; // 0套入 1门槛 2预测
 
-// 0=套入；1=门槛；2=逐手预测
-let phase = 0;
-
-// phase0：顺序套入（子序列匹配）
+// 套入指针（子序列匹配）
 let fitGroupIdx = 0;
 let fitPos = 0;
 
-// 套完12发生在真实第几手（那一手=虚拟12）
 let completedAtRealHand = 0;
 
-// phase1：门槛（13/14/15 = BBP）
-let gateStep = 0;  // 0..2
+// 门槛指针（必须连续3手）
+let gateStep = 0; // 0..2
 let gateHits = 0;
-let lastGateLine = "";
 
-// phase2：逐手预测
-let loopGroupIdx = 0;
-let loopPos = 0;
+// 预测指针（按 MASTER_GROUPS 循环）
+let loopGroupIdx = 5; // ✅ 预测从第6组 PPB 开始（0:PBP 1:BBP 2:PPB 3:PBP 4:BBP 5:PPB 6:PBP 7:PBB）
+let loopPos = 0;      // 0..2
 let phase2StartRealHand = 0;
 
-// ============== DOM ==============
 function byId(id){ return document.getElementById(id); }
 function $(sel){ return document.querySelector(sel); }
-
-function setButtonsDisabled(disabled){
-  const p = $('.player-btn');
-  const b = $('.banker-btn');
-  const back = $('.back-btn');
-  const reset = $('.reset-btn');
-  if(p) p.disabled = disabled;
-  if(b) b.disabled = disabled;
-  if(back) back.disabled = disabled;
-  if(reset) reset.disabled = disabled;
-}
 
 function renderHistory(){
   const box = byId('recordDisplay');
@@ -97,76 +70,36 @@ function showTextOnly(msg){
   if(text) text.textContent = msg;
 }
 
-// ============== 虚拟手计算（DEBUG用） ==============
-function virtualHandForReal(realHand){
-  // realHand: 1..N (已发生的真实手)
-  if(!completedAtRealHand) return null;
-
-  // 1..completedAtRealHand 映射为 虚拟?（套入阶段：虚拟手=未知直到套完，但我们只在套完后显示）
-  // 套完后：已完成那一手 = 虚拟12
-  if(realHand <= completedAtRealHand) return null;
-
-  // 门槛阶段：下一轮始终当作13/14/15
-  if(phase === 1){
-    // 当前这手是门槛的第 gateStep(已推进前) 位置：实时显示用 update里单算
-    return null;
-  }
-
-  // 预测阶段：虚拟16对应 phase2StartRealHand
-  if(phase === 2 && phase2StartRealHand){
-    return 16 + (realHand - phase2StartRealHand);
-  }
-
-  return null;
-}
-
 function fmtUpcomingHand(){
   const upcomingReal = gameHistory.length + 1;
-  let v = null;
 
-  if(phase === 0){
-    // 套入阶段不标虚拟手（你要也可以，但没意义）
-    return `第${upcomingReal}手`;
-  }
-
-  if(phase === 1){
-    // 门槛永远显示 13/14/15
-    v = 13 + gateStep;
-    return `第${upcomingReal}手(${v}手)`;
-  }
-
+  if(phase === 0) return `第${upcomingReal}手`;
+  if(phase === 1) return `第${upcomingReal}手(${13 + gateStep}手)`;
   if(phase === 2){
-    v = phase2StartRealHand ? (16 + (upcomingReal - phase2StartRealHand)) : null;
-    return (v == null) ? `第${upcomingReal}手` : `第${upcomingReal}手(${v}手)`;
+    const v = phase2StartRealHand ? (16 + (upcomingReal - phase2StartRealHand)) : null;
+    return v == null ? `第${upcomingReal}手` : `第${upcomingReal}手(${v}手)`;
   }
-
   return `第${upcomingReal}手`;
 }
 
-// ============== 核心推进 ==============
 function advanceAfterInput(actual){
-
-  // phase0：套入12手（允许跳过、不要求连续）
+  // phase0：套入（顺序匹配可跳过）
   if(phase === 0){
     const need = GROUPS[fitGroupIdx];
     const expect = need[fitPos];
-
     if(actual === expect){
       fitPos++;
       if(fitPos >= 3){
         fitPos = 0;
         fitGroupIdx++;
-
         if(fitGroupIdx >= GROUPS.length){
-          // ✅ 套完12：真实第N手 = 虚拟12
-          completedAtRealHand = gameHistory.length;
+          completedAtRealHand = gameHistory.length; // 这手=虚拟12
           phase = 1;
-
           gateStep = 0;
           gateHits = 0;
 
-          // 预置预测：过门槛后从PPB开始（因为13-15用掉了BBP）
-          loopGroupIdx = 1; // PPB
+          // 预测初始化：从第6组PPB开始（第5组BBP被门槛13-15用掉了）
+          loopGroupIdx = 5;
           loopPos = 0;
           phase2StartRealHand = 0;
 
@@ -179,116 +112,87 @@ function advanceAfterInput(actual){
     return;
   }
 
-  // phase1：门槛（13/14/15 = BBP，必须连续走满3手再判定）
+  // phase1：门槛（必须连续3手）
   if(phase === 1){
-    const target = GATE_GROUP[gateStep];
-    const hit = (actual === target);
-    if(hit) gateHits++;
-
+    const target = GATE_GROUP[gateStep]; // BBP
+    if(actual === target) gateHits++;
     gateStep++;
 
     if(gateStep < 3) return;
 
-    // 满3手统一判定
     if(gateHits >= 1){
       phase = 2;
       phase2StartRealHand = gameHistory.length + 1; // 下一手=虚拟16
-      loopGroupIdx = 1; // ✅ 从PPB开始接上
+      loopGroupIdx = 5; // ✅ 虚拟16从第6组PPB开始
       loopPos = 0;
     } else {
-      // 三手全不中：继续下一轮门槛（仍当作13/14/15）
       gateStep = 0;
       gateHits = 0;
     }
     return;
   }
 
-  // phase2：逐手预测推进（严格顺序）
+  // phase2：预测推进（严格按MASTER_GROUPS）
   if(phase === 2){
     loopPos++;
     if(loopPos >= 3){
       loopPos = 0;
-      loopGroupIdx = (loopGroupIdx + 1) % LOOP_GROUPS.length;
+      loopGroupIdx = (loopGroupIdx + 1) % MASTER_GROUPS.length; // 0..7循环
     }
   }
 }
 
-function nextPredLetterPhase2(){
-  const g = LOOP_GROUPS[loopGroupIdx % LOOP_GROUPS.length];
-  return g[loopPos];
+function nextPred(){
+  return MASTER_GROUPS[loopGroupIdx][loopPos];
 }
 
-// ============== UI刷新（DEBUG信息很全） ==============
 function updateView(){
   const realCount = gameHistory.length;
 
-  // phase0
   if(phase === 0){
     const need = GROUPS[fitGroupIdx];
     const expect = need[fitPos];
     showTextOnly(
-      `【DEBUG】套入阶段（前12手）\n` +
-      `已输入：${realCount}手\n` +
-      `当前目标组：第${fitGroupIdx + 1}/${GROUPS.length}组 = ${need}\n` +
-      `等待字符：${expect}\n` +
-      `下一手：${fmtUpcomingHand()}\n` +
-      `说明：顺序匹配，可跳过夹杂，不要求连续`
+      `【调试】套入阶段（前12手 / 4组）\n`+
+      `标准8组：${MASTER_GROUPS.join("，")}\n`+
+      `当前套入目标：第${fitGroupIdx+1}/4组=${need}\n`+
+      `等待字符：${expect}\n`+
+      `下一手：${fmtUpcomingHand()}`
     );
     return;
   }
 
-  // phase1
   if(phase === 1){
-    const upcoming = fmtUpcomingHand();          // 第x手(13/14/15)
-    const target = GATE_GROUP[gateStep];         // 本轮门槛下一手目标
-    const lastReal = gameHistory.length;          // 刚输入的真实手号
-    const lastActual = gameHistory[lastReal - 1]; // 刚输入结果
-
-    lastGateLine =
-      `【DEBUG】已套完：第${completedAtRealHand}手(12手)\n` +
-      `门槛阶段：13/14/15 = ${GATE_GROUP}\n` +
-      `刚输入：第${lastReal}手 结果=${lastActual}\n` +
-      `本轮门槛命中：${gateHits}/3\n` +
-      `下一手：${upcoming}\n` +
-      `下一手门槛目标：${target}\n` +
-      `规则：必须连续走满3手才判定，三手至少中1手才进入预测`;
-
-    showTextOnly(lastGateLine);
+    showTextOnly(
+      `【调试】已套完：第${completedAtRealHand}手(12手)\n`+
+      `门槛：虚拟13/14/15 = ${GATE_GROUP}（连续3手判定）\n`+
+      `门槛进度：${gateStep}/3｜命中：${gateHits}/3\n`+
+      `下一手：${fmtUpcomingHand()}\n`+
+      `通过后：虚拟16从第6组PPB开始`
+    );
     return;
   }
 
-  // phase2
-  const p = nextPredLetterPhase2();
-  const upcoming = fmtUpcomingHand();
-  const g = LOOP_GROUPS[loopGroupIdx % LOOP_GROUPS.length];
-
+  const p = nextPred();
+  const g = MASTER_GROUPS[loopGroupIdx];
   setLabelSide(p);
-  const text = byId('predictionText');
-  if(text){
-    const phase2VirtualUpcoming = upcoming.includes("(") ? upcoming : upcoming;
-    text.textContent =
-      `【DEBUG】已过门槛（13/14/15=${GATE_GROUP}，三手至少中1手）\n` +
-      `已输入：${realCount}手\n` +
-      `下一手：${phase2VirtualUpcoming}\n` +
-      `当前循环组：${g}（第${loopPos + 1}/3）\n` +
-      `本手预测：${p}\n` +
-      `循环：${LOOP_GROUPS.join(" → ")}\n` +
-      `说明：门槛已用掉BBP，所以虚拟16从PPB开始`;
-  }
+  byId('predictionText').textContent =
+    `【调试】已过门槛（13/14/15=BBP）\n`+
+    `下一手：${fmtUpcomingHand()}\n`+
+    `当前组：${g}（第${loopPos+1}/3）\n`+
+    `预测：${p}\n`+
+    `标准8组：${MASTER_GROUPS.join("，")}\n`+
+    `关键验收：虚拟22-24必须是PBB`;
 }
 
-// ============== Back / Reset（整局重算） ==============
 function recomputeFromHistory(arr){
   phase = 0;
   fitGroupIdx = 0;
   fitPos = 0;
   completedAtRealHand = 0;
-
   gateStep = 0;
   gateHits = 0;
-  lastGateLine = "";
-
-  loopGroupIdx = 1; // 默认预测接PPB（真正进入phase2时会再设置一次）
+  loopGroupIdx = 5;
   loopPos = 0;
   phase2StartRealHand = 0;
 
@@ -299,25 +203,15 @@ function recomputeFromHistory(arr){
   });
 }
 
-// ============== 按钮 ==============
 window.recordResult = function(type){
-  if(waiting) return;
   if(type !== 'B' && type !== 'P') return;
-
-  waiting = true;
-  setButtonsDisabled(true);
-
   gameHistory.push(type);
   renderHistory();
   advanceAfterInput(type);
   updateView();
-
-  waiting = false;
-  setButtonsDisabled(false);
 };
 
 window.undoLastMove = function(){
-  if(waiting) return;
   const old = [...gameHistory];
   old.pop();
   recomputeFromHistory(old);
@@ -326,20 +220,14 @@ window.undoLastMove = function(){
 };
 
 window.resetGame = function(){
-  if(waiting) return;
   recomputeFromHistory([]);
   renderHistory();
-  showTextOnly(
-    `【DEBUG】已重置\n` +
-    `1）套入12手：${GROUPS.join(" → ")}（顺序匹配，可跳过）\n` +
-    `2）套完后：13/14/15 = ${GATE_GROUP}（连续走满3手判定）\n` +
-    `3）过门槛后：虚拟16从 PPB 开始进入循环预测`
-  );
+  showTextOnly('已重置（调试版）。');
+  updateView();
 };
 
-// ============== 初始化 ==============
 document.addEventListener('DOMContentLoaded', function(){
   renderHistory();
-  showTextOnly('【DEBUG】就绪：请输入真实结果(B/P)。');
+  showTextOnly('就绪（调试版）。');
   updateView();
 });
