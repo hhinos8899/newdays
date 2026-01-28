@@ -1,14 +1,14 @@
 /**
  * 最终版 app.js（按你最新规则）
  *
- * A) 套入24手（8组三连按顺序套入）——【顺序匹配，可跳过，不要求连续三手相同】
- *    组顺序：PBP, BBP, PPB, PBP, BBP, PPB, PBP, PBB
+ * A) 套入12手（4组三连按顺序套入）——【顺序匹配，可跳过，不要求连续三手相同】
+ *    组顺序：PBP, BBP, PPB, PBP
  *    例如：PBBP 可以完成 PBP；BPPBP 可以完成 BBP
  *    套入阶段：不预测、不显示P/B、不显示百分比
  *
- * B) 套完24手后（套完那一手=虚拟24）：
- *    进入门槛：PBP（虚拟25/26/27），必须连续走满3手才判定
- *    三手里至少命中1手 -> 过门槛；否则继续下一轮门槛(仍当作25/26/27)
+ * B) 套完12手后（套完那一手=虚拟12）：
+ *    进入门槛：PBP（虚拟13/14/15），必须连续走满3手才判定
+ *    三手里至少命中1手 -> 过门槛；否则继续下一轮门槛(仍当作13/14/15)
  *
  * C) 过门槛后才开始“逐手预测”：
  *    从 BBP 开始按组三连循环：
@@ -17,32 +17,32 @@
  * D) 显示：第真实手(虚拟手)
  */
 
-const GROUPS = ["PBP","BBP","PPB","PBP","BBP","PPB","PBP","PBB"];
+// ✅ 改：24手(8组) -> 12手(4组)
+const GROUPS = ["PBP","BBP","PPB","PBP"];
 const LOOP_GROUPS = ["BBP","PPB","PBP","BBP","PPB","PBP","PBB","PBP"]; // 过门槛后从BBP开始
 
 // ================== 状态 ==================
 let gameHistory = [];
 let waiting = false;
-
 // 0=套入；1=门槛；2=逐手预测
 let phase = 0;
 
 // phase0：顺序套入（子序列匹配）
-let fitGroupIdx = 0; // 0..7
+let fitGroupIdx = 0; // 0..3
 let fitPos = 0;      // 0..2（当前组内匹配到第几位）
 
-// 套完24发生在真实第几手（那一手 = 虚拟24）
+// 套完12发生在真实第几手（那一手 = 虚拟12）
 let completedAtRealHand = 0;
 
 // phase1：门槛
-let gateStep = 0;  // 0..2 对应门槛三手(25/26/27)
+let gateStep = 0;  // 0..2 对应门槛三手(13/14/15)
 let gateHits = 0;  // 本轮门槛三手命中次数
 let lastGateLine = "";
 
 // phase2：逐手预测
 let loopGroupIdx = 0;        // LOOP_GROUPS index
 let loopPos = 0;             // 0..2
-let phase2StartRealHand = 0; // 虚拟28对应的真实手
+let phase2StartRealHand = 0; // 虚拟16对应的真实手
 
 // ================== DOM 工具 ==================
 function byId(id){ return document.getElementById(id); }
@@ -104,19 +104,17 @@ function showTextOnly(msg){
 function virtualHandForUpcoming(){
   // upcomingReal = gameHistory.length + 1
   const upcomingReal = gameHistory.length + 1;
-
   if(!completedAtRealHand) return null;
 
   if(phase === 1){
-    // 门槛阶段：下一手对应 25+gateStep
-    return 25 + gateStep;
+    // ✅ 改：门槛阶段：下一手对应 13+gateStep
+    return 13 + gateStep;
   }
-
   if(phase === 2){
     if(!phase2StartRealHand) return null;
-    return 28 + (upcomingReal - phase2StartRealHand);
+    // ✅ 改：预测阶段从虚拟16开始
+    return 16 + (upcomingReal - phase2StartRealHand);
   }
-
   return null;
 }
 
@@ -142,17 +140,18 @@ function advanceAfterInput(actual){
         fitPos = 0;
         fitGroupIdx++;
 
-        // 8组全部完成 -> 套完24
+        // ✅ 改：4组全部完成 -> 套完12
         if(fitGroupIdx >= GROUPS.length){
-          completedAtRealHand = gameHistory.length; // 真实第N手完成 = 虚拟24
+          completedAtRealHand = gameHistory.length; // 真实第N手完成 = 虚拟12
           phase = 1;
 
           // 初始化门槛
           gateStep = 0;
           gateHits = 0;
+
           lastGateLine =
-            `✅ 第${completedAtRealHand}手(24手)已套完\n` +
-            `开始门槛：下一手(25手)起，PBP必须连续走满3手再判定`;
+            `✅ 第${completedAtRealHand}手(12手)已套完\n` +
+            `开始门槛：下一手(13手)起，PBP必须连续走满3手再判定`;
 
           // 预置预测阶段
           loopGroupIdx = 0; // 从BBP开始
@@ -176,8 +175,8 @@ function advanceAfterInput(actual){
 
     const realHand = gameHistory.length;
     lastGateLine =
-      `✅ 第${completedAtRealHand}手(24手)已套完\n` +
-      `门槛阶段：第${realHand}手(${25 + gateStep}手)\n` +
+      `✅ 第${completedAtRealHand}手(12手)已套完\n` +
+      `门槛阶段：第${realHand}手(${13 + gateStep}手)\n` +
       `本手结果=${actual}｜门槛目标=${target}\n` +
       `进度：${gateStep + 1}/3｜累计命中：${gateHits}/3\n` +
       `（必须走满3手，且三手里至少中1手，才进入后面逐手预测）`;
@@ -190,11 +189,11 @@ function advanceAfterInput(actual){
     // 满3手统一判定
     if(gateHits >= 1){
       phase = 2;
-      phase2StartRealHand = gameHistory.length + 1; // 下一手=虚拟28
+      phase2StartRealHand = gameHistory.length + 1; // 下一手=虚拟16
       loopGroupIdx = 0; // BBP
       loopPos = 0;
     } else {
-      // 三手全不中：下一组三手继续当作25/26/27
+      // 三手全不中：下一组三手继续当作13/14/15
       phase = 1;
       gateStep = 0;
       gateHits = 0;
@@ -224,10 +223,9 @@ function updateView(){
   if(phase === 0){
     const need = GROUPS[fitGroupIdx];
     const expect = need[fitPos];
-
     showTextOnly(
-      `套入24手中（允许跳着套入，不要求连续三手一样）\n` +
-      `当前：第${fitGroupIdx + 1}/8组 目标=${need}\n` +
+      `套入12手中（允许跳着套入，不要求连续三手一样）\n` +
+      `当前：第${fitGroupIdx + 1}/${GROUPS.length}组 目标=${need}\n` +
       `正在等待：${expect}\n` +
       `说明：只要按顺序凑齐 ${need}（中间夹杂P/B都可以跳过）就算这一组过`
     );
@@ -236,7 +234,7 @@ function updateView(){
 
   // phase1：门槛（不进入逐手预测前，主要显示门槛过程）
   if(phase === 1){
-    showTextOnly(lastGateLine || `门槛阶段：必须连续走满3手(25/26/27)再判定`);
+    showTextOnly(lastGateLine || `门槛阶段：必须连续走满3手(13/14/15)再判定`);
     return;
   }
 
@@ -259,10 +257,8 @@ function updateView(){
 // ================== Back / Reset：整局重算 ==================
 function recomputeFromHistory(arr){
   phase = 0;
-
   fitGroupIdx = 0;
   fitPos = 0;
-
   completedAtRealHand = 0;
 
   gateStep = 0;
@@ -290,7 +286,6 @@ window.recordResult = function(type){
 
   gameHistory.push(type);
   renderHistory();
-
   advanceAfterInput(type);
   updateView();
 
@@ -313,7 +308,7 @@ window.resetGame = function(){
   renderHistory();
   showTextOnly(
     `已重置。\n` +
-    `1）先套入24手：按顺序匹配8组（三连可跳过，不要求连续）\n` +
+    `1）先套入12手：按顺序匹配${GROUPS.length}组（三连可跳过，不要求连续）\n` +
     `2）套完后门槛PBP：必须连续走满3手，三手至少中1手\n` +
     `3）过门槛后才逐手预测：从BBP开始循环`
   );
@@ -326,22 +321,20 @@ window.toggleInstructions = function(){
   if(text){
     text.textContent =
 `【规则说明】
-A）套入24手（允许跳着套入，不要求连续三手一样）
-   顺序：PBP → BBP → PPB → PBP → BBP → PPB → PBP → PBB
+A）套入12手（允许跳着套入，不要求连续三手一样）
+   顺序：PBP → BBP → PPB → PBP
    每组只要按顺序凑齐3个字母（中间夹杂可跳过）就算该组完成。
-
-B）套完提示：第N手(24手)已套完（N由系统自动判断）。
-
-C）门槛：虚拟25/26/27 对应 PBP
+B）套完提示：第N手(12手)已套完（N由系统自动判断）。
+C）门槛：虚拟13/14/15 对应 PBP
    必须连续走满3手再判定；
-   三手里至少中1手才过门槛，否则继续下一轮门槛三手（仍当作25/26/27）。
-
+   三手里至少中1手才过门槛，否则继续下一轮门槛三手（仍当作13/14/15）。
 D）过门槛后才逐手预测：
    从 BBP 开始循环：
    BBP → PPB → PBP → BBP → PPB → PBP → PBB → PBP → ...`;
   }
   if(modal) modal.classList.remove('hidden');
 };
+
 window.closeInstructions = function(){
   const modal = byId('instModal');
   if(modal) modal.classList.add('hidden');
@@ -350,6 +343,6 @@ window.closeInstructions = function(){
 // ================== 初始化 ==================
 document.addEventListener('DOMContentLoaded', function(){
   renderHistory();
-  showTextOnly('就绪：请开始输入真实结果(B/P)。\n套入阶段不预测，只按顺序跳着套入8组。');
+  showTextOnly('就绪：请开始输入真实结果(B/P)。\n套入阶段不预测，只按顺序跳着套入4组（共12手）。');
   updateView();
 });
